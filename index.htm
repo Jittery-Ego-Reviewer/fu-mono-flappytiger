@@ -112,7 +112,7 @@
         let highScore = 0;
         let gameState = 'START'; // START, PLAYING, PRACTICE, COUNTDOWN, GAMEOVER
         let practiceTriggeredForCurrentScore = false;
-        let lastInputTime = 0; // Prevent rapid-fire double inputs
+        let lastInputTime = 0; // Prevent rapid-fire double inputs for tiger jumping
         
         // Physics and Objects
         const C_WIDTH = 400; // Logical width
@@ -176,11 +176,6 @@
             setTimeout(() => playTone(300, 'sine', 0.1, 0.05), 30);
         }
 
-        function playHitSound() {
-            playTone(150, 'sawtooth', 0.3, 0.2);
-            setTimeout(() => playTone(100, 'sawtooth', 0.3, 0.2), 100);
-        }
-
         // --- Core Functions ---
         function resizeCanvas() {
             canvas.width = C_WIDTH;
@@ -223,6 +218,9 @@
         }
 
         function handleInput(e) {
+            // Check if input target is a button or inside a button
+            if (e.target.closest('button')) return;
+
             // Debounce touch/mouse double events
             const now = Date.now();
             if (now - lastInputTime < 60) return;
@@ -253,17 +251,34 @@
             }
         });
 
-        // UI Buttons (with stopPropagation so they don't trigger canvas jumps)
-        document.getElementById('startBtn').addEventListener('click', (e) => {
-            e.stopPropagation();
-            startGame();
-        });
-        document.getElementById('restartBtn').addEventListener('click', (e) => {
-            e.stopPropagation();
-            startGame();
-        });
-        document.getElementById('continueBtn').addEventListener('click', (e) => {
-            e.stopPropagation();
+        // --- Unified Highly Responsive Touch/Click Binder for Buttons ---
+        function bindButton(id, callback) {
+            const btn = document.getElementById(id);
+            let lastTriggerTime = 0;
+
+            const triggerAction = (e) => {
+                e.stopPropagation();
+                if (e.cancelable) {
+                    e.preventDefault();
+                }
+
+                const now = Date.now();
+                if (now - lastTriggerTime < 300) return; // Prevent double trigger
+                lastTriggerTime = now;
+
+                initAudio(); // Assure audio is ready on user interaction
+                callback();
+            };
+
+            // Bind both touch and click for maximum responsiveness
+            btn.addEventListener('touchstart', triggerAction, { passive: false });
+            btn.addEventListener('click', triggerAction);
+        }
+
+        // Bind UI actions
+        bindButton('startBtn', startGame);
+        bindButton('restartBtn', startGame);
+        bindButton('continueBtn', () => {
             document.getElementById('practiceScreen').classList.add('hidden');
             startCountdown();
         });
@@ -313,7 +328,6 @@
 
         function gameOver() {
             gameState = 'GAMEOVER';
-            playHitSound();
             if (score > highScore) highScore = score;
             
             document.getElementById('finalScore').innerText = score;
