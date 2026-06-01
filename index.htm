@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Flappy Tiger - /f/ Sound Practice</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            touch-action: none; /* Prevent pull-to-refresh on mobile */
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        @keyframes popIn {
+            0% { transform: scale(0.8) translateY(20px); opacity: 0; }
+            100% { transform: scale(1) translateY(0); opacity: 1; }
+        }
+        .animate-pop {
+            animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+        .animate-float {
+            animation: float 3s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 m-0 flex items-center justify-center h-screen w-screen overflow-hidden text-slate-800 font-sans p-4">
+
+    <!-- Game Container (Maintains 2:3 Aspect Ratio) -->
+    <div id="game-wrapper" class="relative w-full max-w-[450px] aspect-[2/3] max-h-full bg-blue-400 overflow-hidden rounded-3xl shadow-2xl border-4 border-slate-700">
+        
+        <!-- The Game Canvas -->
+        <canvas id="gameCanvas" class="block w-full h-full"></canvas>
+
+        <!-- UI Overlay: Score -->
+        <div id="scoreUI" class="absolute top-6 w-full text-center pointer-events-none z-10 hidden">
+            <span id="currentScore" class="text-6xl font-black text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)]">0</span>
+        </div>
+
+        <!-- UI Overlay: Start Screen -->
+        <div id="startScreen" class="absolute inset-0 flex flex-col items-center justify-center bg-black/40 z-20 p-6 text-center">
+            <div class="text-6xl mb-4 animate-float select-none">🐅</div>
+            <h1 class="text-4xl font-black text-white mb-2 drop-shadow-md tracking-wider">浮浮沉沉的老虎</h1>
+            <p class="text-blue-100 mb-8 text-lg font-medium drop-shadow-sm">/f-/花音發音練習</p>
+            <p class="text-white mb-6 text-sm bg-black/30 px-4 py-2 rounded-full backdrop-blur-sm">點擊畫面跳躍 • 每3分進行發音練習</p>
+            <button id="startBtn" class="px-8 py-4 bg-green-500 hover:bg-green-400 active:bg-green-600 text-white font-bold rounded-full text-2xl shadow-[0_6px_0_#166534] active:shadow-[0_0px_0_#166534] active:translate-y-[6px] transition-all">
+                開始遊戲
+            </button>
+        </div>
+
+        <!-- UI Overlay: Game Over -->
+        <div id="gameOverScreen" class="absolute inset-0 flex flex-col items-center justify-center bg-black/60 z-20 p-6 hidden">
+            <div class="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center text-center animate-pop border-4 border-blue-200 w-full max-w-[320px]">
+                <h2 class="text-3xl font-black text-slate-800 mb-2">遊戲結束!</h2>
+                <div class="flex gap-8 my-6 justify-center w-full">
+                    <div class="flex flex-col items-center">
+                        <span class="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">分數</span>
+                        <span id="finalScore" class="text-4xl font-black text-blue-500">0</span>
+                    </div>
+                    <div class="flex flex-col items-center">
+                        <span class="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">最高分</span>
+                        <span id="bestScore" class="text-4xl font-black text-orange-500">0</span>
+                    </div>
+                </div>
+                <button id="restartBtn" class="w-full mt-2 px-8 py-4 bg-blue-500 hover:bg-blue-400 active:bg-blue-600 text-white font-bold rounded-2xl text-xl shadow-[0_6px_0_#1e3a8a] active:shadow-[0_0px_0_#1e3a8a] active:translate-y-[6px] transition-all">
+                    再玩一次
+                </button>
+            </div>
+        </div>
+
+        <!-- UI Overlay: Practice Pop-up -->
+        <div id="practiceScreen" class="absolute inset-0 flex flex-col items-center justify-center bg-blue-900/85 backdrop-blur-sm z-30 p-6 hidden">
+            <div class="bg-white px-8 py-10 rounded-[3rem] shadow-2xl flex flex-col items-center text-center animate-pop w-full max-w-[320px] border-8 border-blue-300">
+                <span class="text-blue-500 font-bold mb-4 text-base bg-blue-100 px-4 py-1 rounded-full">讀出這個字! 🗣️</span>
+                
+                <div id="practiceWord" class="text-6xl mb-8 mt-2 font-black text-slate-800 leading-tight">
+                    <!-- Word goes here -->
+                </div>
+                
+                <button id="continueBtn" class="w-full px-8 py-4 bg-green-500 hover:bg-green-400 active:bg-green-600 text-white font-bold rounded-2xl text-2xl shadow-[0_6px_0_#166534] active:shadow-[0_0px_0_#166534] active:translate-y-[6px] transition-all">
+                    繼續
+                </button>
+            </div>
+        </div>
+
+        <!-- UI Overlay: Countdown -->
+        <div id="countdownScreen" class="absolute inset-0 flex flex-col items-center justify-center z-20 hidden pointer-events-none">
+            <span id="countdownText" class="text-8xl font-black text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)]">3</span>
+        </div>
+
+    </div>
+
+    <script>
+        // --- Word List ---
+        const practiceWords = [
+            '付💰', '呼🗣️', '副', '夫🏌️', '府', '苦😣', '富💎', '附', '虎🐅', 
+            '父👨‍👧', '扶', '乎', '甫', '敷', '撫🫳', '腐', '膚', '孚', '枯🥀', 
+            '咐🗣️', '斧🪓', '褲👖', '孵🐣'
+        ];
+
+        // --- Game Variables ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const wrapper = document.getElementById('game-wrapper');
+        
+        let frames = 0;
+        let score = 0;
+        let highScore = 0;
+        let gameState = 'START'; // START, PLAYING, PRACTICE, COUNTDOWN, GAMEOVER
+        let practiceTriggeredForCurrentScore = false;
+        let lastInputTime = 0; // Prevent rapid-fire double inputs
+        
+        // Physics and Objects
+        const C_WIDTH = 400; // Logical width
+        const C_HEIGHT = 600; // Logical height
+        
+        const tiger = {
+            x: 80,
+            y: 300,
+            width: 42,
+            height: 42,
+            velocity: 0,
+            gravity: 0.25, // Floaty gravity for easier play
+            jump: -5.5,
+            rotation: 0
+        };
+
+        const pipes = {
+            items: [],
+            width: 60,
+            gap: 190, // Generous gap for kids
+            dx: 2.5,
+            spawnFrame: 120
+        };
+
+        const bubbles = []; // Decorative background elements
+
+        // --- Audio Context (Synthesized sounds) ---
+        let audioCtx;
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playTone(freq, type, duration, vol=0.1) {
+            if(!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+            
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        function playScoreSound() {
+            playTone(880, 'sine', 0.1, 0.2); 
+            setTimeout(() => playTone(1108, 'sine', 0.2, 0.2), 100);
+        }
+
+        function playJumpSound() {
+            playTone(400, 'sine', 0.1, 0.05);
+            setTimeout(() => playTone(300, 'sine', 0.1, 0.05), 30);
+        }
+
+        function playHitSound() {
+            playTone(150, 'sawtooth', 0.3, 0.2);
+            setTimeout(() => playTone(100, 'sawtooth', 0.3, 0.2), 100);
+        }
+
+        // --- Core Functions ---
+        function resizeCanvas() {
+            canvas.width = C_WIDTH;
+            canvas.height = C_HEIGHT;
+        }
+
+        function initGame() {
+            tiger.y = C_HEIGHT / 2;
+            tiger.velocity = 0;
+            tiger.rotation = 0;
+            pipes.items = [];
+            score = 0;
+            frames = 0;
+            practiceTriggeredForCurrentScore = false;
+            updateScoreUI();
+            initBubbles();
+        }
+
+        function initBubbles() {
+            bubbles.length = 0;
+            for(let i=0; i<15; i++) {
+                bubbles.push({
+                    x: Math.random() * C_WIDTH,
+                    y: Math.random() * C_HEIGHT,
+                    size: Math.random() * 8 + 2,
+                    speed: Math.random() * 1 + 0.5
+                });
+            }
+        }
+
+        function getRandomWord() {
+            return practiceWords[Math.floor(Math.random() * practiceWords.length)];
+        }
+
+        function doJump() {
+            if (gameState !== 'PLAYING') return;
+            initAudio();
+            tiger.velocity = tiger.jump;
+            playJumpSound();
+        }
+
+        function handleInput(e) {
+            // Debounce touch/mouse double events
+            const now = Date.now();
+            if (now - lastInputTime < 60) return;
+            lastInputTime = now;
+
+            if (e && e.cancelable) {
+                e.preventDefault();
+            }
+
+            if (gameState === 'START') {
+                initAudio();
+                startGame();
+            } else if (gameState === 'PLAYING') {
+                doJump();
+            }
+        }
+
+        // --- Event Listeners ---
+        window.addEventListener('resize', resizeCanvas);
+        
+        // Touch / Click handles wrapper directly to make tapping easier anywhere
+        wrapper.addEventListener('touchstart', handleInput, {passive: false});
+        wrapper.addEventListener('mousedown', handleInput);
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                handleInput(e);
+            }
+        });
+
+        // UI Buttons (with stopPropagation so they don't trigger canvas jumps)
+        document.getElementById('startBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            startGame();
+        });
+        document.getElementById('restartBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            startGame();
+        });
+        document.getElementById('continueBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            document.getElementById('practiceScreen').classList.add('hidden');
+            startCountdown();
+        });
+
+        // --- Game States ---
+        function startGame() {
+            initGame();
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('gameOverScreen').classList.add('hidden');
+            document.getElementById('scoreUI').classList.remove('hidden');
+            gameState = 'PLAYING';
+            doJump();
+        }
+
+        function triggerPractice() {
+            gameState = 'PRACTICE';
+            practiceTriggeredForCurrentScore = true;
+            
+            const word = getRandomWord();
+            document.getElementById('practiceWord').innerText = word;
+            document.getElementById('practiceScreen').classList.remove('hidden');
+        }
+
+        function startCountdown() {
+            gameState = 'COUNTDOWN';
+            const cdScreen = document.getElementById('countdownScreen');
+            const cdText = document.getElementById('countdownText');
+            cdScreen.classList.remove('hidden');
+            
+            let count = 3;
+            cdText.innerText = count;
+            
+            const interval = setInterval(() => {
+                count--;
+                if (count > 0) {
+                    cdText.innerText = count;
+                } else if (count === 0) {
+                    cdText.innerText = "GO!";
+                } else {
+                    clearInterval(interval);
+                    cdScreen.classList.add('hidden');
+                    gameState = 'PLAYING';
+                    tiger.velocity = -3; 
+                }
+            }, 800);
+        }
+
+        function gameOver() {
+            gameState = 'GAMEOVER';
+            playHitSound();
+            if (score > highScore) highScore = score;
+            
+            document.getElementById('finalScore').innerText = score;
+            document.getElementById('bestScore').innerText = highScore;
+            
+            document.getElementById('scoreUI').classList.add('hidden');
+            document.getElementById('gameOverScreen').classList.remove('hidden');
+        }
+
+        function updateScoreUI() {
+            document.getElementById('currentScore').innerText = score;
+        }
+
+        // --- Main Loop Functions ---
+        function drawBackground() {
+            ctx.fillStyle = '#60a5fa'; // Blue-400
+            ctx.fillRect(0, 0, C_WIDTH, C_HEIGHT);
+
+            // Bubbles
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            bubbles.forEach(b => {
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function updateBackground() {
+            if (gameState !== 'PLAYING') return;
+            bubbles.forEach(b => {
+                b.y -= b.speed;
+                if (b.y < -10) {
+                    b.y = C_HEIGHT + 10;
+                    b.x = Math.random() * C_WIDTH;
+                }
+            });
+        }
+
+        function drawTiger() {
+            ctx.save();
+            // Translate context to center of tiger
+            ctx.translate(tiger.x + tiger.width / 2, tiger.y + tiger.height / 2);
+            
+            // Calculate and smooth rotation based on vertical velocity
+            let targetRotation = Math.min(Math.PI / 4, Math.max(-Math.PI / 4, (tiger.velocity * 0.1)));
+            if (gameState === 'PLAYING') {
+                tiger.rotation = tiger.rotation + (targetRotation - tiger.rotation) * 0.1;
+            }
+            
+            // Rotate the context
+            ctx.rotate(tiger.rotation);
+            
+            // FLIP horizontally because the emoji faces left by default
+            ctx.scale(-1, 1);
+            
+            ctx.font = `${tiger.width}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            // Render emoji. Since we scaled X to -1, it flips horizontally.
+            // Offset slightly down (5) to match visual vertical center of tiger emoji.
+            ctx.fillText('🐅', 0, 5); 
+            ctx.restore();
+        }
+
+        function drawPipes() {
+            pipes.items.forEach(p => {
+                ctx.fillStyle = '#22c55e'; // Green-500
+                ctx.strokeStyle = '#166534'; // Green-800
+                ctx.lineWidth = 4;
+
+                // Top Pipe
+                ctx.fillRect(p.x, 0, pipes.width, p.top);
+                ctx.strokeRect(p.x, 0, pipes.width, p.top);
+                // Top Pipe Cap
+                ctx.fillRect(p.x - 4, p.top - 20, pipes.width + 8, 20);
+                ctx.strokeRect(p.x - 4, p.top - 20, pipes.width + 8, 20);
+
+                // Bottom Pipe
+                ctx.fillRect(p.x, C_HEIGHT - p.bottom, pipes.width, p.bottom);
+                ctx.strokeRect(p.x, C_HEIGHT - p.bottom, pipes.width, p.bottom);
+                // Bottom Pipe Cap
+                ctx.fillRect(p.x - 4, C_HEIGHT - p.bottom, pipes.width + 8, 20);
+                ctx.strokeRect(p.x - 4, C_HEIGHT - p.bottom, pipes.width + 8, 20);
+            });
+        }
+
+        function updateGame() {
+            if (gameState !== 'PLAYING') return;
+
+            // Tiger Physics
+            tiger.velocity += tiger.gravity;
+            tiger.y += tiger.velocity;
+
+            // Floor / Ceiling Collision
+            if (tiger.y + tiger.height >= C_HEIGHT || tiger.y <= 0) {
+                gameOver();
+            }
+
+            // Pipe Spawning
+            if (frames % pipes.spawnFrame === 0) {
+                const minPipeH = 60;
+                const maxPipeH = C_HEIGHT - pipes.gap - minPipeH;
+                const topH = Math.floor(Math.random() * (maxPipeH - minPipeH + 1) + minPipeH);
+                
+                pipes.items.push({
+                    x: C_WIDTH,
+                    top: topH,
+                    bottom: C_HEIGHT - topH - pipes.gap,
+                    passed: false
+                });
+            }
+
+            // Pipe Logic
+            for (let i = pipes.items.length - 1; i >= 0; i--) {
+                let p = pipes.items[i];
+                p.x -= pipes.dx;
+
+                // Hitbox Collision
+                const hitboxPadding = 8; 
+                if (
+                    tiger.x + hitboxPadding < p.x + pipes.width &&
+                    tiger.x + tiger.width - hitboxPadding > p.x &&
+                    (tiger.y + hitboxPadding < p.top || tiger.y + tiger.height - hitboxPadding > C_HEIGHT - p.bottom)
+                ) {
+                    gameOver();
+                }
+
+                // Scoring
+                if (p.x + pipes.width < tiger.x && !p.passed) {
+                    score++;
+                    p.passed = true;
+                    playScoreSound();
+                    updateScoreUI();
+                    practiceTriggeredForCurrentScore = false; 
+                }
+
+                if (p.x + pipes.width < 0) {
+                    pipes.items.splice(i, 1);
+                }
+            }
+
+            // Practice Trigger every 3 points
+            if (score > 0 && score % 3 === 0 && !practiceTriggeredForCurrentScore) {
+                triggerPractice();
+            }
+
+            frames++;
+        }
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawBackground();
+            drawPipes();
+            drawTiger();
+            
+            updateBackground();
+            updateGame();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Initialize
+        resizeCanvas();
+        initBubbles();
+        gameLoop();
+
+    </script>
+</body>
+</html>
